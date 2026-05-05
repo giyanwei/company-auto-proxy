@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxy Dashboard</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e1e4e8; min-height: 100vh; }
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+.card-label { font-size: 0.75rem; text-transform: uppercase; color: #8b949e; letter-spacing: 0.5px; margin-bottom: 4px; }
+.card-value { font-size: 1.75rem; font-weight: 700; }
+.card-value.proxied { color: #f0883e; }
+.card-value.direct { color: #3fb950; }
+.card-value.total { color: #58a6ff; }
+.card-value.conns { color: #d2a8ff; }
+.logs-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
+.logs-header { padding: 12px 16px; border-bottom: 1px solid #30363d; font-weight: 600; font-size: 0.875rem; display: flex; justify-content: space-between; align-items: center; }
+.logs-header span { color: #8b949e; font-weight: 400; font-size: 0.75rem; }
+.logs-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; font-family: 'SF Mono', 'Fira Code', monospace; }
+.logs-table th { text-align: left; padding: 8px 12px; color: #8b949e; font-weight: 500; border-bottom: 1px solid #30363d; }
+.logs-table td { padding: 6px 12px; border-bottom: 1px solid #21262d; }
+.logs-table tr:hover { background: #1c2128; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; }
+.badge-proxy { background: #f0883e22; color: #f0883e; }
+.badge-direct { background: #3fb95022; color: #3fb950; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3fb950; margin-right: 8px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+.uptime { color: #8b949e; font-size: 0.875rem; margin-left: 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1><span class="status-dot"></span>Proxy Dashboard<span class="uptime" id="uptime"></span></h1>
+  <div class="grid">
+    <div class="card"><div class="card-label">Total Requests</div><div class="card-value total" id="total">0</div></div>
+    <div class="card"><div class="card-label">Proxied</div><div class="card-value proxied" id="proxied">0</div></div>
+    <div class="card"><div class="card-label">Direct</div><div class="card-value direct" id="direct">0</div></div>
+    <div class="card"><div class="card-label">Active Connections</div><div class="card-value conns" id="conns">0</div></div>
+  </div>
+  <div class="logs-section">
+    <div class="logs-header">Recent Requests <span>auto-refresh 2s</span></div>
+    <table class="logs-table">
+      <thead><tr><th>Time</th><th>Method</th><th>Host</th><th>Route</th><th>Status</th></tr></thead>
+      <tbody id="logs"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+function formatTime(t) {
+  const d = new Date(t);
+  return d.toLocaleTimeString();
+}
+function formatUptime(startTime) {
+  const ms = Date.now() - new Date(startTime).getTime();
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return h + 'h ' + (m % 60) + 'm';
+  if (m > 0) return m + 'm ' + (s % 60) + 's';
+  return s + 's';
+}
+async function refresh() {
+  try {
+    const [statsRes, logsRes] = await Promise.all([
+      fetch('/api/stats'), fetch('/api/logs')
+    ]);
+    const stats = await statsRes.json();
+    const logs = await logsRes.json();
+    document.getElementById('total').textContent = stats.total_requests;
+    document.getElementById('proxied').textContent = stats.proxied_requests;
+    document.getElementById('direct').textContent = stats.direct_requests;
+    document.getElementById('conns').textContent = stats.active_conns;
+    document.getElementById('uptime').textContent = 'up ' + formatUptime(stats.uptime);
+    const tbody = document.getElementById('logs');
+    tbody.innerHTML = (logs || []).reverse().map(l => `<tr>
+      <td>${formatTime(l.time)}</td>
+      <td>${l.method}</td>
+      <td>${l.host}</td>
+      <td><span class="badge ${l.proxied ? 'badge-proxy' : 'badge-direct'}">${l.proxied ? 'PROXY' : 'DIRECT'}</span></td>
+      <td>${l.status}</td>
+    </tr>`).join('');
+  } catch(e) {}
+}
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

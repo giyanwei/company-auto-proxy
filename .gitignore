@@ -1,3 +1,5 @@
 config.json
 state
 .proxy_url
+proxy.exe
+proxy.pid
