@@ -6,7 +6,8 @@
 .EXAMPLE
     .\proxy-cli.ps1 start
     .\proxy-cli.ps1 status
-    .\proxy-cli.ps1 domains list
+    .\proxy-cli.ps1 proxy on
+    .\proxy-cli.ps1 settings show
 #>
 
 param(
@@ -71,6 +72,7 @@ switch ($Command) {
         if (Test-ServiceRunning) {
             Write-Host "Proxy started on 127.0.0.1:$($config.proxy_port)" -ForegroundColor Green
             Write-Host "Control API on 127.0.0.1:$controlPort" -ForegroundColor Green
+            Write-Host "System proxy set to 127.0.0.1:$($config.proxy_port)" -ForegroundColor Green
             if ($Dashboard) { Write-Host "Dashboard on http://127.0.0.1:${controlPort}/dashboard" -ForegroundColor Green }
         } else {
             Write-Host "Failed to start proxy service." -ForegroundColor Red
@@ -83,7 +85,7 @@ switch ($Command) {
             return
         }
         Send-ControlCommand "/stop" | Out-Null
-        Write-Host "Stop signal sent." -ForegroundColor Green
+        Write-Host "Stop signal sent. System proxy will be cleared." -ForegroundColor Green
     }
 
     "status" {
@@ -94,13 +96,88 @@ switch ($Command) {
         $status = Send-ControlCommand "/status"
         if ($status) {
             Write-Host "Status:      running" -ForegroundColor Green
+            Write-Host "Proxy:       $(if ($status.proxy_enabled) { 'ENABLED' } else { 'DISABLED' })"
             Write-Host "Uptime:      $($status.uptime)"
-            Write-Host "Proxy:       $($status.proxy_addr)"
+            Write-Host "Listen:      $($status.proxy_addr)"
             Write-Host "Network:     $($status.network_state)"
-            Write-Host "Dashboard:   $($status.dashboard_enabled)"
-            if ($status.dashboard_addr) { Write-Host "             $($status.dashboard_addr)" }
+            Write-Host "WiFi Detect: $(if ($status.wifi_detection) { 'on' } else { 'off' }) (pattern: $($status.ssid_pattern))"
+            Write-Host "Auto Start:  $(if ($status.auto_start) { 'on' } else { 'off' })"
+            Write-Host "Dashboard:   $(if ($status.dashboard_enabled) { 'on' } else { 'off' })"
             Write-Host "Requests:    $($status.total_requests) total, $($status.proxied_requests) proxied, $($status.direct_requests) direct"
             Write-Host "Active:      $($status.active_conns) connections"
+        }
+    }
+
+    "proxy" {
+        switch ($SubCommand) {
+            "on" {
+                if (-not (Test-ServiceRunning)) { Write-Host "Proxy service is not running. Start it first." -ForegroundColor Red; return }
+                Send-ControlCommand "/proxy/on" | Out-Null
+                Write-Host "System proxy enabled (127.0.0.1:$($config.proxy_port))" -ForegroundColor Green
+            }
+            "off" {
+                if (-not (Test-ServiceRunning)) { Write-Host "Proxy service is not running." -ForegroundColor Red; return }
+                Send-ControlCommand "/proxy/off" | Out-Null
+                Write-Host "System proxy disabled" -ForegroundColor Green
+            }
+            default { Write-Host "Usage: proxy-cli.ps1 proxy <on|off>" }
+        }
+    }
+
+    "settings" {
+        switch ($SubCommand) {
+            "show" {
+                if (Test-ServiceRunning) {
+                    $settings = Send-ControlCommand "/settings"
+                    if ($settings) {
+                        Write-Host "Proxy Enabled:  $(if ($settings.proxy_enabled) { 'yes' } else { 'no' })"
+                        Write-Host "WiFi Detection: $(if ($settings.wifi_detection) { 'on' } else { 'off' })"
+                        Write-Host "SSID Pattern:   $($settings.ssid_pattern)"
+                        Write-Host "Auto Start:     $(if ($settings.auto_start) { 'on' } else { 'off' })"
+                    }
+                } else {
+                    Write-Host "WiFi Detection: $(if ($config.wifi_detection) { 'on' } else { 'off' })"
+                    Write-Host "SSID Pattern:   $($config.ssid_pattern)"
+                    Write-Host "Auto Start:     $(if ($config.auto_start) { 'on' } else { 'off' })"
+                }
+            }
+            "set" {
+                if (-not $Arg1 -or -not $Arg2) { Write-Host "Usage: proxy-cli.ps1 settings set <key> <value>"; return }
+                switch ($Arg1) {
+                    "wifi_detection" {
+                        if (Test-ServiceRunning) {
+                            Send-ControlCommand "/settings/wifi_detection?value=$Arg2" | Out-Null
+                        } else {
+                            $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
+                            $cfg.wifi_detection = $Arg2 -eq "true"
+                            $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
+                        }
+                        Write-Host "WiFi detection: $Arg2" -ForegroundColor Green
+                    }
+                    "ssid_pattern" {
+                        if (Test-ServiceRunning) {
+                            Send-ControlCommand "/settings/ssid_pattern?value=$([uri]::EscapeDataString($Arg2))" | Out-Null
+                        } else {
+                            $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
+                            $cfg.ssid_pattern = $Arg2
+                            $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
+                        }
+                        Write-Host "SSID pattern: $Arg2" -ForegroundColor Green
+                    }
+                    "auto_start" {
+                        if (Test-ServiceRunning) {
+                            Send-ControlCommand "/settings/auto_start?value=$Arg2" | Out-Null
+                        } else {
+                            $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
+                            $cfg.auto_start = $Arg2 -eq "true"
+                            $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
+                        }
+                        Write-Host "Auto start: $Arg2" -ForegroundColor Green
+                    }
+                    default { Write-Host "Unknown setting: $Arg1. Available: wifi_detection, ssid_pattern, auto_start" -ForegroundColor Red }
+                }
+            }
+            default { Write-Host "Usage: proxy-cli.ps1 settings <show|set>" }
         }
     }
 
@@ -122,9 +199,10 @@ switch ($Command) {
                 switch ($Arg1) {
                     "proxy_port" { $cfg.proxy_port = [int]$Arg2 }
                     "control_port" { $cfg.control_port = [int]$Arg2 }
-                    "dashboard_port" { $cfg.dashboard_port = [int]$Arg2 }
                     "ssid_pattern" { $cfg.ssid_pattern = $Arg2 }
                     "auto_switch" { $cfg.auto_switch = $Arg2 -eq "true" }
+                    "wifi_detection" { $cfg.wifi_detection = $Arg2 -eq "true" }
+                    "auto_start" { $cfg.auto_start = $Arg2 -eq "true" }
                     "dashboard_enabled" { $cfg.dashboard_enabled = $Arg2 -eq "true" }
                     default { Write-Host "Unknown key: $Arg1" -ForegroundColor Red; return }
                 }
@@ -225,11 +303,6 @@ switch ($Command) {
         $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)
         Register-ScheduledTask -TaskName "CompanyProxyAuto" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
 
-        # Set environment variables
-        $proxyUrl = "http://127.0.0.1:$($config.proxy_port)"
-        [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $proxyUrl, "User")
-        [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyUrl, "User")
-
         # Install tray if full mode
         if ($Mode -eq "full" -and (Test-Path "$installPath\proxy-tray.ps1")) {
             $trayAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$installPath\proxy-tray.ps1`""
@@ -241,7 +314,7 @@ switch ($Command) {
         Write-Host "Installation complete!" -ForegroundColor Green
         Write-Host "  Path: $installPath" -ForegroundColor Gray
         Write-Host "  Mode: $Mode" -ForegroundColor Gray
-        Write-Host "  HTTP_PROXY/HTTPS_PROXY = $proxyUrl" -ForegroundColor Gray
+        Write-Host "  System proxy will be set automatically when service starts" -ForegroundColor Gray
         Write-Host "`n  Restart your terminal for env vars to take effect." -ForegroundColor Yellow
     }
 
@@ -253,17 +326,20 @@ switch ($Command) {
         Unregister-ScheduledTask -TaskName "CompanyProxyAuto" -Confirm:$false -ErrorAction SilentlyContinue
         Unregister-ScheduledTask -TaskName "CompanyProxyAutoTray" -Confirm:$false -ErrorAction SilentlyContinue
 
-        # Clear env vars
+        # Clear env vars and system proxy
         [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $null, "User")
         [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $null, "User")
+        $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+        Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 0
+        Remove-ItemProperty -Path $regPath -Name ProxyServer -ErrorAction SilentlyContinue
 
         Write-Host "Uninstalled." -ForegroundColor Green
         Write-Host "  Removed scheduled tasks" -ForegroundColor Gray
-        Write-Host "  Cleared HTTP_PROXY/HTTPS_PROXY" -ForegroundColor Gray
+        Write-Host "  Cleared system proxy and HTTP_PROXY/HTTPS_PROXY" -ForegroundColor Gray
         Write-Host "  Config preserved at: $configFile" -ForegroundColor Gray
     }
 
-    "version" { Write-Host "company-auto-proxy v2.0.0 (PowerShell)" }
+    "version" { Write-Host "company-auto-proxy v2.1.0 (PowerShell)" }
 
     "help" {
         Write-Host @"
@@ -273,9 +349,12 @@ Usage:
   proxy-cli.ps1 <command> [options]
 
 Commands:
-  start [-Dashboard]       Start proxy service
-  stop                     Stop proxy service
+  start [-Dashboard]       Start proxy service (sets system proxy automatically)
+  stop                     Stop proxy service (clears system proxy)
   status                   Show status and statistics
+  proxy on|off             Enable/disable system proxy (service keeps running)
+  settings show            Show current settings
+  settings set <key> <val> Set: wifi_detection, ssid_pattern, auto_start
   reload                   Reload configuration
   config show              Show current configuration
   config set <key> <val>   Set a config value
@@ -283,8 +362,7 @@ Commands:
   domains list             List whitelisted domains
   domains add <grp> <d>    Add domain to a group
   domains remove <d>       Remove domain
-  dashboard on             Activate web dashboard
-  dashboard off            Deactivate dashboard
+  dashboard on|off         Activate/deactivate web dashboard
   install [-Mode cli|full] Install as startup service
   uninstall                Remove service and clean up
   version                  Show version

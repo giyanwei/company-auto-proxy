@@ -7,6 +7,8 @@
   ],
   "ssid_pattern": "SAP",
   "auto_switch": true,
+  "auto_start": false,
+  "wifi_detection": true,
   "dashboard_enabled": false,
   "log_max_entries": 100,
   "install_path": "%USERPROFILE%\\.proxy",

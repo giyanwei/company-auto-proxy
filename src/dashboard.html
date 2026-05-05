@@ -18,6 +18,37 @@ h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
 .card-value.total { color: #58a6ff; }
 .card-value.conns { color: #d2a8ff; }
 .card-value.network { color: #f78166; }
+
+/* Control panel */
+.control-panel { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+.control-panel h2 { font-size: 1rem; color: #58a6ff; margin-bottom: 16px; }
+.control-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #21262d; }
+.control-row:last-child { border-bottom: none; }
+.control-label { font-size: 0.875rem; color: #e1e4e8; }
+.control-desc { font-size: 0.75rem; color: #8b949e; margin-top: 2px; }
+.control-right { display: flex; align-items: center; gap: 10px; }
+
+/* Toggle switch */
+.toggle { position: relative; width: 44px; height: 24px; cursor: pointer; }
+.toggle input { display: none; }
+.toggle .slider { position: absolute; inset: 0; background: #30363d; border-radius: 12px; transition: 0.2s; }
+.toggle .slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: #8b949e; border-radius: 50%; transition: 0.2s; }
+.toggle input:checked + .slider { background: #238636; }
+.toggle input:checked + .slider::before { transform: translateX(20px); background: #fff; }
+
+/* Big proxy button */
+.proxy-btn { padding: 10px 24px; border: none; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: 0.2s; }
+.proxy-btn.on { background: #238636; color: #fff; }
+.proxy-btn.on:hover { background: #2ea043; }
+.proxy-btn.off { background: #da3633; color: #fff; }
+.proxy-btn.off:hover { background: #f85149; }
+
+/* SSID input */
+.ssid-input { display: flex; align-items: center; gap: 8px; }
+.ssid-input input { background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e1e4e8; padding: 6px 10px; font-size: 0.8rem; width: 140px; }
+.ssid-input button { background: #30363d; border: 1px solid #484f58; color: #e1e4e8; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+.ssid-input button:hover { background: #484f58; }
+
 .logs-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; overflow: hidden; }
 .logs-header { padding: 12px 16px; border-bottom: 1px solid #30363d; font-weight: 600; font-size: 0.875rem; display: flex; justify-content: space-between; align-items: center; }
 .logs-header span { color: #8b949e; font-weight: 400; font-size: 0.75rem; }
@@ -28,9 +59,9 @@ h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; }
 .badge-proxy { background: #f0883e22; color: #f0883e; }
 .badge-direct { background: #3fb95022; color: #3fb950; }
-.badge-corp { background: #f0883e22; color: #f0883e; }
-.badge-other { background: #3fb95022; color: #3fb950; }
-.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #3fb950; margin-right: 8px; animation: pulse 2s infinite; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
+.status-dot.active { background: #3fb950; }
+.status-dot.inactive { background: #da3633; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .uptime { color: #8b949e; font-size: 0.875rem; margin-left: 12px; }
 .domains-section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-top: 24px; padding: 16px; }
@@ -49,7 +80,60 @@ h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
 </head>
 <body>
 <div class="container">
-  <h1><span class="status-dot"></span>Proxy Dashboard<span class="uptime" id="uptime"></span></h1>
+  <h1><span class="status-dot active" id="statusDot"></span>Proxy Dashboard<span class="uptime" id="uptime"></span></h1>
+
+  <!-- Control Panel -->
+  <div class="control-panel">
+    <h2>Controls</h2>
+    <div class="control-row">
+      <div>
+        <div class="control-label">Proxy</div>
+        <div class="control-desc">Enable/disable system proxy interception</div>
+      </div>
+      <div class="control-right">
+        <span id="proxyStatus" style="font-size:0.75rem;color:#8b949e">--</span>
+        <button class="proxy-btn on" id="proxyBtn" onclick="toggleProxy()">ON</button>
+      </div>
+    </div>
+    <div class="control-row">
+      <div>
+        <div class="control-label">WiFi Detection</div>
+        <div class="control-desc">Auto-detect corporate network by SSID</div>
+      </div>
+      <div class="control-right">
+        <label class="toggle">
+          <input type="checkbox" id="wifiToggle" onchange="toggleWifi()">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="control-row">
+      <div>
+        <div class="control-label">SSID Pattern</div>
+        <div class="control-desc">Regex pattern to match corporate WiFi</div>
+      </div>
+      <div class="control-right">
+        <div class="ssid-input">
+          <input type="text" id="ssidInput" placeholder="SAP">
+          <button onclick="saveSsid()">Save</button>
+        </div>
+      </div>
+    </div>
+    <div class="control-row">
+      <div>
+        <div class="control-label">Auto Start</div>
+        <div class="control-desc">Start proxy service on Windows login</div>
+      </div>
+      <div class="control-right">
+        <label class="toggle">
+          <input type="checkbox" id="autoStartToggle" onchange="toggleAutoStart()">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
   <div class="grid">
     <div class="card"><div class="card-label">Network</div><div class="card-value network" id="network">--</div></div>
     <div class="card"><div class="card-label">Total Requests</div><div class="card-value total" id="total">0</div></div>
@@ -57,6 +141,8 @@ h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
     <div class="card"><div class="card-label">Direct</div><div class="card-value direct" id="direct">0</div></div>
     <div class="card"><div class="card-label">Active Conns</div><div class="card-value conns" id="conns">0</div></div>
   </div>
+
+  <!-- Logs -->
   <div class="logs-section">
     <div class="logs-header">Recent Requests <span>auto-refresh 2s</span></div>
     <table class="logs-table">
@@ -64,6 +150,8 @@ h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
       <tbody id="logs"></tbody>
     </table>
   </div>
+
+  <!-- Domains -->
   <div class="domains-section">
     <h2>Domain Whitelist</h2>
     <div class="domain-add">
@@ -76,6 +164,8 @@ h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 20px; color: #58a6ff; }
 </div>
 <script>
 const API = '';
+let currentState = {};
+
 function formatTime(t) { return new Date(t).toLocaleTimeString(); }
 function formatUptime(startTime) {
   const ms = Date.now() - new Date(startTime).getTime();
@@ -84,11 +174,72 @@ function formatUptime(startTime) {
   if (m > 0) return m + 'm ' + (s % 60) + 's';
   return s + 's';
 }
+
+async function toggleProxy() {
+  const isOn = currentState.proxy_enabled;
+  await fetch(API + (isOn ? '/proxy/off' : '/proxy/on'));
+  refresh();
+}
+
+async function toggleWifi() {
+  const val = document.getElementById('wifiToggle').checked;
+  await fetch(API + '/settings/wifi_detection?value=' + val);
+  refresh();
+}
+
+async function toggleAutoStart() {
+  const val = document.getElementById('autoStartToggle').checked;
+  await fetch(API + '/settings/auto_start?value=' + val);
+  refresh();
+}
+
+async function saveSsid() {
+  const val = document.getElementById('ssidInput').value.trim();
+  if (!val) return;
+  await fetch(API + '/settings/ssid_pattern?value=' + encodeURIComponent(val));
+  refresh();
+}
+
+function updateControls(stats) {
+  currentState = stats;
+
+  // Proxy button
+  const btn = document.getElementById('proxyBtn');
+  const statusText = document.getElementById('proxyStatus');
+  const dot = document.getElementById('statusDot');
+  if (stats.proxy_enabled) {
+    btn.textContent = 'ON';
+    btn.className = 'proxy-btn on';
+    statusText.textContent = 'System proxy active';
+    dot.className = 'status-dot active';
+  } else {
+    btn.textContent = 'OFF';
+    btn.className = 'proxy-btn off';
+    statusText.textContent = 'System proxy disabled';
+    dot.className = 'status-dot inactive';
+  }
+
+  // WiFi toggle
+  document.getElementById('wifiToggle').checked = stats.wifi_detection;
+
+  // SSID
+  const ssidInput = document.getElementById('ssidInput');
+  if (document.activeElement !== ssidInput) {
+    ssidInput.value = stats.ssid_pattern || '';
+  }
+
+  // Auto start
+  document.getElementById('autoStartToggle').checked = stats.auto_start;
+}
+
 async function refresh() {
   try {
     const [statsRes, logsRes] = await Promise.all([fetch(API+'/api/stats'), fetch(API+'/api/logs')]);
     const stats = await statsRes.json();
     const logs = await logsRes.json();
+
+    updateControls(stats);
+
     document.getElementById('total').textContent = stats.total_requests;
     document.getElementById('proxied').textContent = stats.proxied_requests;
     document.getElementById('direct').textContent = stats.direct_requests;
@@ -105,6 +256,7 @@ async function refresh() {
     </tr>`).join('');
   } catch(e) {}
 }
+
 async function loadDomains() {
   try {
     const res = await fetch(API+'/domains');
@@ -119,6 +271,7 @@ async function loadDomains() {
     container.innerHTML = html;
   } catch(e) {}
 }
+
 async function addDomain() {
   const group = document.getElementById('addGroup').value || 'misc';
   const domain = document.getElementById('addDomain').value.trim();
@@ -127,10 +280,12 @@ async function addDomain() {
   document.getElementById('addDomain').value = '';
   loadDomains();
 }
+
 async function removeDomain(domain) {
   await fetch(API+`/domains/remove?domain=${domain}`);
   loadDomains();
 }
+
 refresh(); loadDomains();
 setInterval(refresh, 2000);
 setInterval(loadDomains, 10000);

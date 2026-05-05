@@ -41,6 +41,7 @@ function New-TrayIcon {
     $brush = switch ($Color) {
         "green"  { [System.Drawing.Brushes]::LimeGreen }
         "orange" { [System.Drawing.Brushes]::Orange }
+        "red"    { [System.Drawing.Brushes]::Red }
         "gray"   { [System.Drawing.Brushes]::Gray }
         default  { [System.Drawing.Brushes]::Gray }
     }
@@ -51,6 +52,7 @@ function New-TrayIcon {
 
 $iconGreen  = New-TrayIcon "green"
 $iconOrange = New-TrayIcon "orange"
+$iconRed    = New-TrayIcon "red"
 $iconGray   = New-TrayIcon "gray"
 
 # --- System tray setup ---
@@ -67,7 +69,27 @@ $statusItem.Enabled = $false
 
 $contextMenu.Items.Add("-") | Out-Null
 
-$startItem = $contextMenu.Items.Add("Start Proxy")
+# Proxy on/off
+$proxyOnItem = $contextMenu.Items.Add("Enable Proxy")
+$proxyOnItem.Add_Click({
+    Send-Command "/proxy/on" | Out-Null
+    Start-Sleep -Milliseconds 500
+    Update-TrayState
+    $notifyIcon.ShowBalloonTip(2000, "Proxy", "System proxy enabled", [System.Windows.Forms.ToolTipIcon]::Info)
+})
+
+$proxyOffItem = $contextMenu.Items.Add("Disable Proxy")
+$proxyOffItem.Add_Click({
+    Send-Command "/proxy/off" | Out-Null
+    Start-Sleep -Milliseconds 500
+    Update-TrayState
+    $notifyIcon.ShowBalloonTip(2000, "Proxy", "System proxy disabled", [System.Windows.Forms.ToolTipIcon]::Info)
+})
+
+$contextMenu.Items.Add("-") | Out-Null
+
+# Start/Stop service
+$startItem = $contextMenu.Items.Add("Start Service")
 $startItem.Add_Click({
     $args_ = "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptDir\proxy-service.ps1`" -Dashboard"
     Start-Process powershell -ArgumentList $args_ -WindowStyle Hidden
@@ -76,13 +98,49 @@ $startItem.Add_Click({
     $notifyIcon.ShowBalloonTip(2000, "Proxy", "Proxy service started", [System.Windows.Forms.ToolTipIcon]::Info)
 })
 
-$stopItem = $contextMenu.Items.Add("Stop Proxy")
+$stopItem = $contextMenu.Items.Add("Stop Service")
 $stopItem.Add_Click({
     Send-Command "/stop" | Out-Null
     Start-Sleep -Seconds 1
     Update-TrayState
     $notifyIcon.ShowBalloonTip(2000, "Proxy", "Proxy service stopped", [System.Windows.Forms.ToolTipIcon]::Info)
 })
+
+$contextMenu.Items.Add("-") | Out-Null
+
+# WiFi Detection submenu
+$wifiMenu = New-Object System.Windows.Forms.ToolStripMenuItem("WiFi Detection")
+$wifiOnItem = New-Object System.Windows.Forms.ToolStripMenuItem("Enable")
+$wifiOnItem.Add_Click({
+    Send-Command "/settings/wifi_detection?value=true" | Out-Null
+    Update-TrayState
+})
+$wifiOffItem = New-Object System.Windows.Forms.ToolStripMenuItem("Disable")
+$wifiOffItem.Add_Click({
+    Send-Command "/settings/wifi_detection?value=false" | Out-Null
+    Update-TrayState
+})
+$wifiMenu.DropDownItems.Add($wifiOnItem) | Out-Null
+$wifiMenu.DropDownItems.Add($wifiOffItem) | Out-Null
+$contextMenu.Items.Add($wifiMenu) | Out-Null
+
+# Auto Start submenu
+$autoStartMenu = New-Object System.Windows.Forms.ToolStripMenuItem("Auto Start")
+$autoStartOnItem = New-Object System.Windows.Forms.ToolStripMenuItem("Enable")
+$autoStartOnItem.Add_Click({
+    Send-Command "/settings/auto_start?value=true" | Out-Null
+    Update-TrayState
+    $notifyIcon.ShowBalloonTip(2000, "Proxy", "Auto-start enabled", [System.Windows.Forms.ToolTipIcon]::Info)
+})
+$autoStartOffItem = New-Object System.Windows.Forms.ToolStripMenuItem("Disable")
+$autoStartOffItem.Add_Click({
+    Send-Command "/settings/auto_start?value=false" | Out-Null
+    Update-TrayState
+    $notifyIcon.ShowBalloonTip(2000, "Proxy", "Auto-start disabled", [System.Windows.Forms.ToolTipIcon]::Info)
+})
+$autoStartMenu.DropDownItems.Add($autoStartOnItem) | Out-Null
+$autoStartMenu.DropDownItems.Add($autoStartOffItem) | Out-Null
+$contextMenu.Items.Add($autoStartMenu) | Out-Null
 
 $contextMenu.Items.Add("-") | Out-Null
 
@@ -132,18 +190,41 @@ function Update-TrayState {
     $status = Get-Status
     if ($status) {
         $state = $status.network_state
-        if ($state -eq "CORP") {
-            $notifyIcon.Icon = $iconOrange
-            $statusItem.Text = "Status: CORP (proxied)"
-            $notifyIcon.Text = "Proxy: CORP - $($status.total_requests) requests"
+        $proxyEnabled = $status.proxy_enabled
+
+        if ($proxyEnabled) {
+            if ($state -eq "CORP") {
+                $notifyIcon.Icon = $iconOrange
+                $statusItem.Text = "Status: CORP (proxied)"
+                $notifyIcon.Text = "Proxy: CORP - $($status.total_requests) reqs"
+            } else {
+                $notifyIcon.Icon = $iconGreen
+                $statusItem.Text = "Status: DIRECT"
+                $notifyIcon.Text = "Proxy: DIRECT - $($status.total_requests) reqs"
+            }
+            $proxyOnItem.Enabled = $false
+            $proxyOffItem.Enabled = $true
         } else {
-            $notifyIcon.Icon = $iconGreen
-            $statusItem.Text = "Status: DIRECT"
-            $notifyIcon.Text = "Proxy: DIRECT - $($status.total_requests) requests"
+            $notifyIcon.Icon = $iconRed
+            $statusItem.Text = "Status: PROXY DISABLED"
+            $notifyIcon.Text = "Proxy: disabled"
+            $proxyOnItem.Enabled = $true
+            $proxyOffItem.Enabled = $false
         }
+
         $startItem.Enabled = $false
         $stopItem.Enabled = $true
         $dashboardItem.Enabled = $true
+        $wifiMenu.Enabled = $true
+        $autoStartMenu.Enabled = $true
+
+        # Update WiFi menu checkmarks
+        $wifiOnItem.Checked = [bool]$status.wifi_detection
+        $wifiOffItem.Checked = -not [bool]$status.wifi_detection
+
+        # Update Auto Start menu checkmarks
+        $autoStartOnItem.Checked = [bool]$status.auto_start
+        $autoStartOffItem.Checked = -not [bool]$status.auto_start
 
         # Notify on state change
         if ($script:lastNetworkState -and $script:lastNetworkState -ne $state) {
@@ -163,11 +244,15 @@ function Update-TrayState {
         }
     } else {
         $notifyIcon.Icon = $iconGray
-        $statusItem.Text = "Status: stopped"
+        $statusItem.Text = "Status: service stopped"
         $notifyIcon.Text = "Proxy: stopped"
         $startItem.Enabled = $true
         $stopItem.Enabled = $false
+        $proxyOnItem.Enabled = $false
+        $proxyOffItem.Enabled = $false
         $dashboardItem.Enabled = $false
+        $wifiMenu.Enabled = $false
+        $autoStartMenu.Enabled = $false
         $script:lastNetworkState = ""
     }
 }
