@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Install company-proxy-auto - network-aware proxy auto-switch for Windows.
+    Install company-auto-proxy - network-aware proxy auto-switch for Windows.
 .DESCRIPTION
     Reads config.json, generates PAC file, installs scripts, registers scheduled task,
     and configures shell profiles for dynamic proxy switching.
@@ -33,7 +33,7 @@ $proxy = $config.proxies[0]
 $pacPort = $config.pac_port
 $ssidPattern = $config.ssid_pattern
 
-Write-Host "=== company-proxy-auto installer ===" -ForegroundColor Cyan
+Write-Host "=== company-auto-proxy installer ===" -ForegroundColor Cyan
 Write-Host "Install path: $installPath"
 Write-Host "Proxy: $proxy"
 Write-Host "SSID pattern: $ssidPattern"
@@ -97,7 +97,7 @@ Register-ScheduledTask -TaskName "CompanyProxyAuto" -Action $action -Trigger $tr
 # --- Configure shell profiles ---
 Write-Host "[6/7] Configuring shell profiles..." -ForegroundColor Green
 
-$marker = "company-proxy-auto"
+$marker = "company-auto-proxy"
 
 # Bash
 $bashrc = "$env:USERPROFILE\.bashrc"

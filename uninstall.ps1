@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Uninstall company-proxy-auto.
+    Uninstall company-auto-proxy.
 .DESCRIPTION
     Stops services, removes scheduled task, clears proxy settings,
     removes shell profile snippets, and optionally deletes the install directory.
@@ -22,7 +22,7 @@ if (Test-Path $configFile) {
     $installPath = "$env:USERPROFILE\.proxy"
 }
 
-Write-Host "=== company-proxy-auto uninstaller ===" -ForegroundColor Cyan
+Write-Host "=== company-auto-proxy uninstaller ===" -ForegroundColor Cyan
 Write-Host ""
 
 # --- Stop running processes ---
@@ -63,8 +63,8 @@ $env:HTTP_PROXY = $null
 # --- Remove shell profile snippets ---
 Write-Host "[6/6] Removing shell profile snippets..." -ForegroundColor Green
 
-$marker_start = "# >>> company-proxy-auto >>>"
-$marker_end = "# <<< company-proxy-auto <<<"
+$marker_start = "# >>> company-auto-proxy >>>"
+$marker_end = "# <<< company-auto-proxy <<<"
 
 # Bash
 $bashrc = "$env:USERPROFILE\.bashrc"

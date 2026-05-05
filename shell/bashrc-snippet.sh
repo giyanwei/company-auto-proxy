@@ -1,4 +1,4 @@
-# >>> company-proxy-auto >>>
+# >>> company-auto-proxy >>>
 __proxy_switch() {
     local state_file="$HOME/.proxy/state"
     if [[ -f "$state_file" ]]; then
@@ -15,4 +15,4 @@ __proxy_switch() {
     fi
 }
 PROMPT_COMMAND="__proxy_switch;${PROMPT_COMMAND}"
-# <<< company-proxy-auto <<<
+# <<< company-auto-proxy <<<

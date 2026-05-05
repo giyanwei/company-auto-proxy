@@ -1,4 +1,4 @@
-# company-proxy-auto
+# company-auto-proxy
 
 Network-aware proxy auto-switch for Windows. Automatically enables/disables proxy based on your WiFi network, with PAC-based domain routing.
 
@@ -15,8 +15,8 @@ Network-aware proxy auto-switch for Windows. Automatically enables/disables prox
 
 ```powershell
 # 1. Clone the repo
-git clone https://github.com/giyanwei/company-proxy-auto.git
-cd company-proxy-auto
+git clone https://github.com/giyanwei/company-auto-proxy.git
+cd company-auto-proxy
 
 # 2. Create your config (edit with your proxy settings)
 cp config.example.json config.json
@@ -90,7 +90,7 @@ powershell -ExecutionPolicy Bypass -File uninstall.ps1 -KeepFiles
 ## File Structure
 
 ```
-company-proxy-auto/
+company-auto-proxy/
 ├── config.example.json        # Configuration template
 ├── install.ps1                # One-click installer
 ├── uninstall.ps1              # Clean uninstaller
