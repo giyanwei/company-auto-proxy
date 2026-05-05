@@ -1,4 +1,4 @@
-# >>> company-proxy-auto >>>
+# >>> company-auto-proxy >>>
 function __CompanyProxySwitch {
     $stateFile = "$env:USERPROFILE\.proxy\state"
     if (Test-Path $stateFile) {
@@ -22,4 +22,4 @@ function prompt {
     __CompanyProxySwitch
     & $__cpaOriginalPrompt
 }
-# <<< company-proxy-auto <<<
+# <<< company-auto-proxy <<<

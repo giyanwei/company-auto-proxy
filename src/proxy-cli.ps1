@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    company-proxy-auto CLI tool.
+    company-auto-proxy CLI tool.
 .DESCRIPTION
     Command-line interface for controlling the proxy service.
 .EXAMPLE
@@ -263,11 +263,11 @@ switch ($Command) {
         Write-Host "  Config preserved at: $configFile" -ForegroundColor Gray
     }
 
-    "version" { Write-Host "company-proxy-auto v2.0.0 (PowerShell)" }
+    "version" { Write-Host "company-auto-proxy v2.0.0 (PowerShell)" }
 
     "help" {
         Write-Host @"
-company-proxy-auto - Smart local proxy with domain-based routing
+company-auto-proxy - Smart local proxy with domain-based routing
 
 Usage:
   proxy-cli.ps1 <command> [options]

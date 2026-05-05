@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    company-proxy-auto service daemon.
+    company-auto-proxy service daemon.
 .DESCRIPTION
     Local proxy with domain-based routing, control API, dashboard, and WiFi SSID auto-detection.
 #>
@@ -49,7 +49,7 @@ if (-not $mutex.WaitOne(0)) {
     exit 1
 }
 
-Write-Host "company-proxy-auto service starting..." -ForegroundColor Cyan
+Write-Host "company-auto-proxy service starting..." -ForegroundColor Cyan
 
 # SSID check
 function Get-CurrentSSID {

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    company-proxy-auto system tray icon.
+    company-auto-proxy system tray icon.
 .DESCRIPTION
     Displays a system tray icon with proxy status and control menu.
     Communicates with the running proxy-service via control API.
