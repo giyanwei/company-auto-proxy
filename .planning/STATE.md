@@ -9,7 +9,7 @@
 
 ## Current Position
 
-**Phase:** 1 - Configuration Foundation
+**Phase:** 1 - Configuration + Basic Control
 **Plan:** None (not yet planned)
 **Status:** Not started
 **Progress:** [..........] 0/6 phases complete
@@ -28,6 +28,7 @@
 ### Key Decisions
 - 2026-05-06: Roadmap follows research-recommended build order (Config -> Logging -> Fallback -> Watchdog -> Installer -> Control)
 - 2026-05-06: Stability requirements split across Phase 3 (fallback) and Phase 4 (watchdog) per dependency analysis
+- 2026-05-06: Moved CTRL-01 (cap on/off) and CTRL-04 (cap status) into Phase 1 so basic CLI control is available immediately for testing all subsequent phases
 
 ### Known Issues
 - None yet
@@ -46,9 +47,9 @@
 
 ## Session Continuity
 
-**Last session:** 2026-05-06 (initialization)
+**Last session:** 2026-05-06 (roadmap revision)
 **Next action:** Plan Phase 1 via `/gsd-plan-phase 1`
-**Context to carry:** Brownfield project with working prototype; Phase 1 refactors existing config handling into validated, hot-reloadable system
+**Context to carry:** Brownfield project with working prototype; Phase 1 refactors existing config handling into validated, hot-reloadable system AND adds basic CLI control (cap on/off/status) for immediate testability
 
 ---
 *State initialized: 2026-05-06*

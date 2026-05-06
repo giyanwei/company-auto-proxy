@@ -94,6 +94,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CONF-05 | Phase 1 | Pending |
 | CONF-06 | Phase 1 | Pending |
 | CONF-07 | Phase 1 | Pending |
+| CTRL-01 | Phase 1 | Pending |
+| CTRL-04 | Phase 1 | Pending |
 | LOG-01 | Phase 2 | Pending |
 | LOG-02 | Phase 2 | Pending |
 | LOG-03 | Phase 2 | Pending |
@@ -111,17 +113,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INST-04 | Phase 5 | Pending |
 | INST-05 | Phase 5 | Pending |
 | INST-06 | Phase 5 | Pending |
-| CTRL-01 | Phase 6 | Pending |
 | CTRL-02 | Phase 6 | Pending |
 | CTRL-03 | Phase 6 | Pending |
-| CTRL-04 | Phase 6 | Pending |
 | CTRL-05 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 26 total
 - Mapped to phases: 26
-- Unmapped: 0 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-05-06*
-*Last updated: 2026-05-06 after initial definition*
+*Last updated: 2026-05-06 -- CTRL-01/CTRL-04 moved to Phase 1, CTRL-02/03/05 remain Phase 6*

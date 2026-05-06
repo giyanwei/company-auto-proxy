@@ -6,26 +6,28 @@
 
 ## Phases
 
-- [ ] **Phase 1: Configuration Foundation** - Full config system with schema validation, hot-reload, and sensible defaults
+- [ ] **Phase 1: Configuration + Basic Control** - Full config system with schema validation, hot-reload, defaults, plus testable CLI on/off/status
 - [ ] **Phase 2: Structured Logging** - JSON Lines logging with rotation, level filtering, and diagnostic export
 - [ ] **Phase 3: Graceful Fallback** - Circuit breaker pattern for automatic DIRECT fallback with auto-recovery
 - [ ] **Phase 4: Watchdog & Self-Healing** - Supervisor process with health checks, crash recovery, and proxy state cleanup
 - [ ] **Phase 5: Interactive Installer** - Guided setup wizard with PATH management, auto-start, and clean uninstall
-- [ ] **Phase 6: Control Polish** - CLI, tray, and dashboard controls unified and reliable from any context
+- [ ] **Phase 6: Control Polish** - Tray icon toggle, dashboard button, and end-to-end test command
 
 ## Phase Details
 
-### Phase 1: Configuration Foundation
-**Goal**: Every runtime behavior is driven by a validated, documented config.json that users can customize without breaking anything
+### Phase 1: Configuration + Basic Control
+**Goal**: Every runtime behavior is driven by a validated config.json, and the user can immediately control and observe the proxy via CLI for daily use and testability
 **Depends on**: Nothing (first phase)
-**Requirements**: CONF-01, CONF-02, CONF-03, CONF-04, CONF-05, CONF-06, CONF-07
+**Requirements**: CONF-01, CONF-02, CONF-03, CONF-04, CONF-05, CONF-06, CONF-07, CTRL-01, CTRL-04
 **Success Criteria** (what must be TRUE):
   1. User can open config.json and understand every field via inline comments or companion schema doc
   2. User receives a clear, actionable error message when config contains invalid values (bad port, malformed URL, unknown key)
   3. User can edit config.json while proxy is running and see changes take effect within seconds without restart
   4. Default config works out of the box -- user only needs to set their corporate proxy URL and SSID
+  5. User can run `cap on` and `cap off` from any terminal type (PowerShell, cmd, Git Bash) and proxy responds immediately
+  6. User can run `cap status` and see current state (running/stopped), mode (CORP/DIRECT), and uptime
 **Plans**: TBD
-**Notes**: This is the foundation layer. Every subsequent phase reads settings from this config system. Use atomic write pattern (write .tmp, validate, rename) to prevent corruption. FileSystemWatcher with debounce for hot-reload.
+**Notes**: This is the foundation layer. Every subsequent phase reads settings from this config system. Including basic CLI control here enables immediate manual testing of all future phases without waiting for Phase 6. Use atomic write pattern (write .tmp, validate, rename) to prevent corruption. FileSystemWatcher with debounce for hot-reload.
 
 ### Phase 2: Structured Logging
 **Goal**: All proxy activity is observable through structured, rotated log files that enable rapid diagnosis of issues
@@ -47,7 +49,7 @@
   1. User unplugs from corporate network and web browsing continues working within 5 seconds (no manual intervention)
   2. User reconnects to corporate network and traffic resumes routing through corporate proxy automatically
   3. User sees a popup notification when fallback activates, explaining what happened and that connectivity is maintained
-  4. User can observe current mode (CORP/DIRECT) via status command at any time
+  4. User can observe current mode (CORP/DIRECT) via `cap status` at any time
 **Plans**: TBD
 **Notes**: Implements circuit breaker pattern (CLOSED/OPEN/HALF-OPEN) per upstream. This delivers the core "just works" promise. Error popup mechanism (STAB-07) uses BalloonTip for non-blocking notifications.
 
@@ -75,24 +77,22 @@
 **Notes**: Install manifest pattern -- record every change made during install so uninstall can reverse exactly those changes. PATH manipulation must parse-deduplicate-rejoin to avoid corruption. Admin detection with graceful fallback to user-context alternatives.
 
 ### Phase 6: Control Polish
-**Goal**: Users can start, stop, and monitor the proxy through whichever interface they prefer -- CLI, tray icon, or dashboard -- with consistent behavior
-**Depends on**: Phase 1-4 (all runtime capabilities must be stable), Phase 5 (cap command is in PATH)
-**Requirements**: CTRL-01, CTRL-02, CTRL-03, CTRL-04, CTRL-05
+**Goal**: Users can interact with the proxy through tray icon and dashboard, and validate connectivity end-to-end -- completing the multi-interface control story
+**Depends on**: Phase 1-5 (all runtime capabilities stable, cap command in PATH)
+**Requirements**: CTRL-02, CTRL-03, CTRL-05
 **Success Criteria** (what must be TRUE):
-  1. User can run `cap on` and `cap off` from any terminal type and proxy responds immediately
-  2. User can single-click the tray icon to toggle proxy state (no menu diving for the common action)
-  3. User can view current state, mode (CORP/DIRECT), uptime, and connection count via `cap status`
-  4. User can run `cap test` and get a pass/fail result confirming the full proxy chain works end-to-end before committing to proxy mode
-  5. Dashboard start/stop button reflects real-time proxy state and controls it without page refresh
+  1. User can single-click the tray icon to toggle proxy state (no menu diving for the common action)
+  2. Dashboard start/stop button reflects real-time proxy state and controls it without page refresh
+  3. User can run `cap test` and get a pass/fail result confirming the full proxy chain works end-to-end before committing to proxy mode
 **Plans**: TBD
 **UI hint**: yes
-**Notes**: All control interfaces communicate via the existing HTTP Control API (port 8082). This phase polishes and hardens what already exists rather than building from scratch. Focus on consistency across CLI/tray/dashboard.
+**Notes**: All control interfaces communicate via the existing HTTP Control API (port 8082). This phase polishes GUI controls and adds the diagnostic test command. Focus on consistency across tray/dashboard interfaces.
 
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. Configuration Foundation | 0/? | Not started | - |
+| 1. Configuration + Basic Control | 0/? | Not started | - |
 | 2. Structured Logging | 0/? | Not started | - |
 | 3. Graceful Fallback | 0/? | Not started | - |
 | 4. Watchdog & Self-Healing | 0/? | Not started | - |
@@ -104,14 +104,16 @@
 | Category | Requirements | Phase | Count |
 |----------|-------------|-------|-------|
 | Configuration | CONF-01, CONF-02, CONF-03, CONF-04, CONF-05, CONF-06, CONF-07 | Phase 1 | 7 |
+| Control (Basic) | CTRL-01, CTRL-04 | Phase 1 | 2 |
 | Logging | LOG-01, LOG-02, LOG-03, LOG-04 | Phase 2 | 4 |
 | Stability (Fallback) | STAB-04, STAB-05, STAB-06, STAB-07 | Phase 3 | 4 |
 | Stability (Self-Healing) | STAB-01, STAB-02, STAB-03 | Phase 4 | 3 |
 | Installation | INST-01, INST-02, INST-03, INST-04, INST-05, INST-06 | Phase 5 | 6 |
-| Control | CTRL-01, CTRL-02, CTRL-03, CTRL-04, CTRL-05 | Phase 6 | 5 |
+| Control (Polish) | CTRL-02, CTRL-03, CTRL-05 | Phase 6 | 3 |
 
 **Total mapped: 26/26 -- No orphans, no duplicates.**
 
 ---
 *Roadmap created: 2026-05-06*
+*Roadmap revised: 2026-05-06 -- moved CTRL-01, CTRL-04 into Phase 1 for testability*
 *Granularity: standard | Phases: 6 | Mode: yolo*
