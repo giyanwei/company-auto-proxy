@@ -207,6 +207,45 @@ switch ($Command) {
         Write-Host "$totalReq total ($proxiedReq proxied, $directReq direct)" -ForegroundColor White
         Write-Host "  Active:    " -NoNewline -ForegroundColor Gray
         Write-Host "$activeConns connections" -ForegroundColor White
+        $httpProxy = [System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")
+        if ($httpProxy) {
+            Write-Host "  Env:       " -NoNewline -ForegroundColor Gray
+            Write-Host "HTTP_PROXY=$httpProxy" -ForegroundColor Green
+        } else {
+            Write-Host "  Env:       " -NoNewline -ForegroundColor Gray
+            Write-Host "not set (use 'cap env on' for CLI tools)" -ForegroundColor Yellow
+        }
+    }
+
+    "env" {
+        switch ($SubCommand) {
+            "on" {
+                [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:$proxyPort", "User")
+                [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:$proxyPort", "User")
+                Write-Host "Environment variables set (new terminals will use proxy)" -ForegroundColor Green
+                Write-Host "  HTTP_PROXY=http://127.0.0.1:$proxyPort" -ForegroundColor Gray
+                Write-Host "  HTTPS_PROXY=http://127.0.0.1:$proxyPort" -ForegroundColor Gray
+                Write-Host ""
+                Write-Host "  For current terminal: `$env:HTTP_PROXY = 'http://127.0.0.1:$proxyPort'" -ForegroundColor Yellow
+            }
+            "off" {
+                [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $null, "User")
+                [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $null, "User")
+                Write-Host "Environment variables cleared." -ForegroundColor Green
+                Write-Host ""
+                Write-Host "  For current terminal: Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY -ErrorAction SilentlyContinue" -ForegroundColor Yellow
+            }
+            default {
+                $httpProxy = [System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")
+                if ($httpProxy) {
+                    Write-Host "HTTP_PROXY=$httpProxy" -ForegroundColor Green
+                    Write-Host "HTTPS_PROXY=$([System.Environment]::GetEnvironmentVariable('HTTPS_PROXY', 'User'))" -ForegroundColor Green
+                } else {
+                    Write-Host "Environment variables not set." -ForegroundColor Yellow
+                    Write-Host "  Use 'cap env on' to set HTTP_PROXY/HTTPS_PROXY for CLI tools (gh, curl, git, npm)" -ForegroundColor Gray
+                }
+            }
+        }
     }
 
     "domains" {
@@ -424,6 +463,10 @@ Commands:
   stop                     Stop proxy service
   restart                  Restart proxy service
   status [--short]         Show service status and statistics
+
+  env                      Show HTTP_PROXY/HTTPS_PROXY status
+  env on                   Set env vars for CLI tools (gh, curl, git, npm)
+  env off                  Clear env vars
 
   domains list             List routed domains by group
   domains add <grp> <d>    Add domain to a group

@@ -15,19 +15,27 @@ function Enable-SystemProxy {
     )
 
     $proxyAddr = "127.0.0.1:$Port"
-    $proxyUrl = "http://$proxyAddr"
-
     Set-ItemProperty -Path $script:RegistryPath -Name ProxyEnable -Value 1
     Set-ItemProperty -Path $script:RegistryPath -Name ProxyServer -Value $proxyAddr
-
-    [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $proxyUrl, "User")
-    [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyUrl, "User")
 }
 
 function Disable-SystemProxy {
     Set-ItemProperty -Path $script:RegistryPath -Name ProxyEnable -Value 0
     Remove-ItemProperty -Path $script:RegistryPath -Name ProxyServer -ErrorAction SilentlyContinue
+}
 
+function Enable-ProxyEnv {
+    param(
+        [Parameter(Mandatory=$true)]
+        [int]$Port
+    )
+
+    $proxyUrl = "http://127.0.0.1:$Port"
+    [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $proxyUrl, "User")
+    [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyUrl, "User")
+}
+
+function Disable-ProxyEnv {
     [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $null, "User")
     [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $null, "User")
 }
@@ -46,9 +54,7 @@ function Get-SystemProxyState {
         if ($serverVal -and $serverVal.ProxyServer) {
             $server = $serverVal.ProxyServer
         }
-    } catch {
-        # Registry keys may not exist
-    }
+    } catch {}
 
     $httpProxy = [System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")
     $httpsProxy = [System.Environment]::GetEnvironmentVariable("HTTPS_PROXY", "User")

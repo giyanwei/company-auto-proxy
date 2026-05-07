@@ -123,19 +123,14 @@ $controlScriptBlock = {
             }
             "/proxy/on" {
                 $proxyAddr = "127.0.0.1:$proxyPort"
-                $proxyUrl = "http://$proxyAddr"
                 Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 1
                 Set-ItemProperty -Path $regPath -Name ProxyServer -Value $proxyAddr
-                [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $proxyUrl, "User")
-                [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyUrl, "User")
                 $state.ProxyEnabled = $true
                 $jsonOut = '{"ok":true}'
             }
             "/proxy/off" {
                 Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 0
                 Remove-ItemProperty -Path $regPath -Name ProxyServer -ErrorAction SilentlyContinue
-                [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $null, "User")
-                [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $null, "User")
                 $state.ProxyEnabled = $false
                 $jsonOut = '{"ok":true}'
             }
