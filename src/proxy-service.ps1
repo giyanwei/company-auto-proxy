@@ -16,11 +16,13 @@ $modulesDir = Join-Path $scriptDir "modules"
 . (Join-Path $modulesDir "Config.ps1")
 . (Join-Path $modulesDir "DomainMatcher.ps1")
 . (Join-Path $modulesDir "SystemProxy.ps1")
+. (Join-Path $modulesDir "Bypass.ps1")
 
 $script:Config = Initialize-Config -ScriptDir $scriptDir
 if ($Dashboard) { $script:Config.control.dashboard_enabled = $true }
 
 $script:DomainSet = Initialize-DomainSet -ScriptDir $scriptDir
+$script:BypassList = Initialize-BypassList -ScriptDir $scriptDir
 
 $script:State = [hashtable]::Synchronized(@{
     Running         = $true
@@ -65,7 +67,7 @@ if ($script:State.WifiDetection) {
     $script:State.NetworkState = "CORP"
 }
 
-Enable-SystemProxy -Port $script:Config.proxy.port
+Enable-SystemProxy -Port $script:Config.proxy.port -ProxyOverride (Get-ProxyOverrideString -BypassList $script:BypassList)
 
 # PID file
 Set-Content -Path (Join-Path $scriptDir "proxy.pid") -Value $PID -NoNewline
@@ -240,12 +242,38 @@ $controlScriptBlock = {
 
 # --- Proxy connection handler ---
 $proxyHandler = {
-    param($client, $upstreamProxy, $domainSet, $state, $logBuffer, $logMax)
+    param($client, $upstreamProxy, $domainSet, $state, $logBuffer, $logMax, $bypassList)
 
-    function Test-Match($h, $ds, $st) {
+    function Test-BypassInline($h, $bl) {
+        if ($bl.Exact.ContainsKey($h)) { return $true }
+        foreach ($s in $bl.Suffix) {
+            if ($h.EndsWith($s) -or $h -eq $s.Substring(1)) { return $true }
+        }
+        foreach ($p in $bl.Prefix) {
+            if ($h.StartsWith($p)) { return $true }
+        }
+        $parsed = $null
+        if ([System.Net.IPAddress]::TryParse($h, [ref]$parsed) -and $bl.Cidr.Count -gt 0) {
+            $ipBytes = $parsed.GetAddressBytes()
+            foreach ($c in $bl.Cidr) {
+                $netBytes = $c.Network.GetAddressBytes()
+                $bits = $c.Bits
+                $match = $true
+                for ($i = 0; $i -lt 4; $i++) {
+                    $maskByte = if ($bits -ge 8) { 255 } elseif ($bits -gt 0) { [byte](256 - [Math]::Pow(2, 8 - $bits)) } else { 0 }
+                    if (($ipBytes[$i] -band $maskByte) -ne ($netBytes[$i] -band $maskByte)) { $match = $false; break }
+                    $bits = [Math]::Max(0, $bits - 8)
+                }
+                if ($match) { return $true }
+            }
+        }
+        return $false
+    }
+
+    function Test-Match($h, $ds, $st, $bl) {
         $h = $h.ToLower()
         if ($h -match '^(.+):(\d+)$') { $h = $Matches[1] }
-        if ($h -eq 'localhost' -or $h -eq '127.0.0.1' -or $h -eq '::1') { return $false }
+        if (Test-BypassInline $h $bl) { return $false }
         if ($st.NetworkState -eq "OTHER") { return $false }
         if ($ds.ContainsKey($h)) { return $true }
         foreach ($d in @($ds.Keys)) { if ($h.EndsWith(".$d")) { return $true } }
@@ -274,7 +302,7 @@ $proxyHandler = {
         if ($method -eq 'CONNECT') {
             $hostPort = $target
             if ($hostPort -notmatch ':') { $hostPort += ":443" }
-            $shouldProxy = Test-Match $hostPort $domainSet $state
+            $shouldProxy = Test-Match $hostPort $domainSet $state $bypassList
             [System.Threading.Interlocked]::Increment([ref]$state.TotalRequests) | Out-Null
 
             if ($shouldProxy) {
@@ -314,7 +342,7 @@ $proxyHandler = {
             $uri = try { [Uri]$target } catch { $null }
             if (-not $uri) { $client.Close(); return }
             $hostName = $uri.Host
-            $shouldProxy = Test-Match $hostName $domainSet $state
+            $shouldProxy = Test-Match $hostName $domainSet $state $bypassList
             [System.Threading.Interlocked]::Increment([ref]$state.TotalRequests) | Out-Null
 
             $handler = New-Object System.Net.Http.HttpClientHandler
@@ -415,7 +443,8 @@ while ($script:State.Running) {
             AddArgument($script:DomainSet).
             AddArgument($script:State).
             AddArgument($script:LogBuffer).
-            AddArgument($script:LogMax) | Out-Null
+            AddArgument($script:LogMax).
+            AddArgument($script:BypassList) | Out-Null
         $handle = $ps.BeginInvoke()
         $jobs.Add(@{ PS = $ps; Handle = $handle }) | Out-Null
     }

@@ -11,17 +11,22 @@ $script:RegistryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet
 function Enable-SystemProxy {
     param(
         [Parameter(Mandatory=$true)]
-        [int]$Port
+        [int]$Port,
+        [string]$ProxyOverride
     )
 
     $proxyAddr = "127.0.0.1:$Port"
     Set-ItemProperty -Path $script:RegistryPath -Name ProxyEnable -Value 1
     Set-ItemProperty -Path $script:RegistryPath -Name ProxyServer -Value $proxyAddr
+    if ($ProxyOverride) {
+        Set-ItemProperty -Path $script:RegistryPath -Name ProxyOverride -Value $ProxyOverride
+    }
 }
 
 function Disable-SystemProxy {
     Set-ItemProperty -Path $script:RegistryPath -Name ProxyEnable -Value 0
     Remove-ItemProperty -Path $script:RegistryPath -Name ProxyServer -ErrorAction SilentlyContinue
+    Remove-ItemProperty -Path $script:RegistryPath -Name ProxyOverride -ErrorAction SilentlyContinue
 }
 
 function Enable-ProxyEnv {

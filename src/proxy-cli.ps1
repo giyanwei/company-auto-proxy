@@ -218,32 +218,104 @@ switch ($Command) {
     }
 
     "env" {
+        $bypassPath = Join-Path $scriptDir "bypass.json"
+        $bypassEntries = if (Test-Path $bypassPath) { [string[]](Get-Content $bypassPath -Raw | ConvertFrom-Json) } else { @() }
+        $noProxy = $bypassEntries -join ','
         switch ($SubCommand) {
             "on" {
                 [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", "http://127.0.0.1:$proxyPort", "User")
                 [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", "http://127.0.0.1:$proxyPort", "User")
+                [System.Environment]::SetEnvironmentVariable("NO_PROXY", $noProxy, "User")
+                $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+                $override = ($bypassEntries + @("<local>")) -join ';'
+                Set-ItemProperty -Path $regPath -Name ProxyOverride -Value $override
                 Write-Host "Environment variables set (new terminals will use proxy)" -ForegroundColor Green
                 Write-Host "  HTTP_PROXY=http://127.0.0.1:$proxyPort" -ForegroundColor Gray
                 Write-Host "  HTTPS_PROXY=http://127.0.0.1:$proxyPort" -ForegroundColor Gray
+                Write-Host "  NO_PROXY=$noProxy" -ForegroundColor Gray
+                Write-Host "  ProxyOverride=$override" -ForegroundColor Gray
                 Write-Host ""
-                Write-Host "  For current terminal: `$env:HTTP_PROXY = 'http://127.0.0.1:$proxyPort'" -ForegroundColor Yellow
+                Write-Host "  For current terminal:" -ForegroundColor Yellow
+                Write-Host "    `$env:HTTP_PROXY = 'http://127.0.0.1:$proxyPort'" -ForegroundColor Yellow
+                Write-Host "    `$env:HTTPS_PROXY = 'http://127.0.0.1:$proxyPort'" -ForegroundColor Yellow
+                Write-Host "    `$env:NO_PROXY = '$noProxy'" -ForegroundColor Yellow
             }
             "off" {
                 [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $null, "User")
                 [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $null, "User")
+                [System.Environment]::SetEnvironmentVariable("NO_PROXY", $null, "User")
+                $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+                Remove-ItemProperty -Path $regPath -Name ProxyOverride -ErrorAction SilentlyContinue
                 Write-Host "Environment variables cleared." -ForegroundColor Green
                 Write-Host ""
-                Write-Host "  For current terminal: Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY -ErrorAction SilentlyContinue" -ForegroundColor Yellow
+                Write-Host "  For current terminal: Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY, Env:NO_PROXY -ErrorAction SilentlyContinue" -ForegroundColor Yellow
             }
             default {
                 $httpProxy = [System.Environment]::GetEnvironmentVariable("HTTP_PROXY", "User")
+                $noProxyVal = [System.Environment]::GetEnvironmentVariable("NO_PROXY", "User")
                 if ($httpProxy) {
                     Write-Host "HTTP_PROXY=$httpProxy" -ForegroundColor Green
                     Write-Host "HTTPS_PROXY=$([System.Environment]::GetEnvironmentVariable('HTTPS_PROXY', 'User'))" -ForegroundColor Green
+                    Write-Host "NO_PROXY=$noProxyVal" -ForegroundColor Green
                 } else {
                     Write-Host "Environment variables not set." -ForegroundColor Yellow
-                    Write-Host "  Use 'cap env on' to set HTTP_PROXY/HTTPS_PROXY for CLI tools (gh, curl, git, npm)" -ForegroundColor Gray
+                    Write-Host "  Use 'cap env on' to set HTTP_PROXY/HTTPS_PROXY/NO_PROXY for CLI tools" -ForegroundColor Gray
                 }
+            }
+        }
+    }
+
+    "bypass" {
+        $bypassPath = Join-Path $scriptDir "bypass.json"
+        switch ($SubCommand) {
+            "list" {
+                if (-not (Test-Path $bypassPath)) {
+                    Write-Host "No bypass.json found." -ForegroundColor Yellow
+                    exit 0
+                }
+                $entries = [string[]](Get-Content $bypassPath -Raw | ConvertFrom-Json)
+                Write-Host "Bypass list ($($entries.Count) entries):" -ForegroundColor Cyan
+                foreach ($e in $entries) { Write-Host "  $e" }
+            }
+            "add" {
+                if (-not $Arg1) {
+                    Write-Host "Usage: cap bypass add <pattern>" -ForegroundColor Red
+                    Write-Host "  Examples: localhost, 127.0.0.1, 10.*, *.local, 10.0.0.0/8" -ForegroundColor Gray
+                    exit 1
+                }
+                $entries = if (Test-Path $bypassPath) { [string[]](Get-Content $bypassPath -Raw | ConvertFrom-Json) } else { @() }
+                if ($entries -contains $Arg1) {
+                    Write-Host "Already in bypass list: $Arg1" -ForegroundColor Yellow
+                    exit 0
+                }
+                $entries = [string[]]($entries + @($Arg1))
+                $json = ConvertTo-Json $entries -Depth 5
+                [System.IO.File]::WriteAllText($bypassPath, $json)
+                Write-Host "Added to bypass: $Arg1" -ForegroundColor Green
+                Write-Host "  Run 'cap env on' to update NO_PROXY" -ForegroundColor Gray
+            }
+            "remove" {
+                if (-not $Arg1) {
+                    Write-Host "Usage: cap bypass remove <pattern>" -ForegroundColor Red
+                    exit 1
+                }
+                if (-not (Test-Path $bypassPath)) {
+                    Write-Host "No bypass.json found." -ForegroundColor Yellow
+                    exit 1
+                }
+                $entries = [string[]](Get-Content $bypassPath -Raw | ConvertFrom-Json)
+                if ($entries -notcontains $Arg1) {
+                    Write-Host "Not in bypass list: $Arg1" -ForegroundColor Yellow
+                    exit 0
+                }
+                $entries = [string[]]($entries | Where-Object { $_ -ne $Arg1 })
+                $json = ConvertTo-Json $entries -Depth 5
+                [System.IO.File]::WriteAllText($bypassPath, $json)
+                Write-Host "Removed from bypass: $Arg1" -ForegroundColor Green
+                Write-Host "  Run 'cap env on' to update NO_PROXY" -ForegroundColor Gray
+            }
+            default {
+                Write-Host "Usage: cap bypass <list|add|remove>" -ForegroundColor Yellow
             }
         }
     }
@@ -464,9 +536,13 @@ Commands:
   restart                  Restart proxy service
   status [--short]         Show service status and statistics
 
-  env                      Show HTTP_PROXY/HTTPS_PROXY status
-  env on                   Set env vars for CLI tools (gh, curl, git, npm)
-  env off                  Clear env vars
+  env                      Show HTTP_PROXY/HTTPS_PROXY/NO_PROXY status
+  env on                   Set env vars + NO_PROXY + ProxyOverride for CLI tools
+  env off                  Clear all proxy env vars
+
+  bypass list              Show bypass (no-proxy) patterns
+  bypass add <pattern>     Add bypass pattern (e.g. *.local, 10.*, 10.0.0.0/8)
+  bypass remove <pattern>  Remove bypass pattern
 
   domains list             List routed domains by group
   domains add <grp> <d>    Add domain to a group
