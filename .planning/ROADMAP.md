@@ -26,7 +26,7 @@
   4. Default config works out of the box -- user only needs to set their corporate proxy URL and SSID
   5. User can run `cap on` and `cap off` from any terminal type (PowerShell, cmd, Git Bash) and proxy responds immediately
   6. User can run `cap status` and see current state (running/stopped), mode (CORP/DIRECT), and uptime
-**Plans**: TBD
+**Plans**: 3 (Config System, CLI Refactor, Integration & Cleanup)
 **Notes**: This is the foundation layer. Every subsequent phase reads settings from this config system. Including basic CLI control here enables immediate manual testing of all future phases without waiting for Phase 6. Use atomic write pattern (write .tmp, validate, rename) to prevent corruption. FileSystemWatcher with debounce for hot-reload.
 
 ### Phase 2: Structured Logging
@@ -92,7 +92,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|---------------|--------|-----------|
-| 1. Configuration + Basic Control | 0/? | Not started | - |
+| 1. Configuration + Basic Control | 3/3 | Planned | - |
 | 2. Structured Logging | 0/? | Not started | - |
 | 3. Graceful Fallback | 0/? | Not started | - |
 | 4. Watchdog & Self-Healing | 0/? | Not started | - |

@@ -20,9 +20,10 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $configFile = Join-Path $scriptDir "config.json"
+$defaultConfigFile = Join-Path $scriptDir "config.default.json"
+$domainsFile = Join-Path $scriptDir "domains.json"
 if (-not (Test-Path $configFile)) {
-    $defaultConfig = Join-Path (Split-Path -Parent $scriptDir) "config.default.json"
-    if (Test-Path $defaultConfig) { Copy-Item $defaultConfig $configFile }
+    if (Test-Path $defaultConfigFile) { Copy-Item $defaultConfigFile $configFile }
 }
 $config = if (Test-Path $configFile) { Get-Content $configFile -Raw | ConvertFrom-Json } else { $null }
 
@@ -211,7 +212,13 @@ switch ($Command) {
     "domains" {
         switch ($SubCommand) {
             "list" {
-                $domains = if (Test-ServiceRunning) { Send-ControlCommand "/domains" } else { $config.domains }
+                if (Test-ServiceRunning) {
+                    $domains = Send-ControlCommand "/domains"
+                } elseif (Test-Path $domainsFile) {
+                    $domains = Get-Content $domainsFile -Raw | ConvertFrom-Json
+                } else {
+                    $domains = $null
+                }
                 if (-not $domains) {
                     Write-Host "No domains configured." -ForegroundColor Yellow
                     exit 0
@@ -230,13 +237,15 @@ switch ($Command) {
                 }
                 if (Test-ServiceRunning) {
                     Send-ControlCommand "/domains/add?group=$Arg1&domain=$Arg2" | Out-Null
-                } else {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                    $list = [System.Collections.ArrayList]@($cfg.domains.$Arg1)
-                    $list.Add($Arg2) | Out-Null
-                    $cfg.domains | Add-Member -NotePropertyName $Arg1 -NotePropertyValue @($list) -Force
-                    $json = $cfg | ConvertTo-Json -Depth 5
-                    [System.IO.File]::WriteAllText($configFile, $json)
+                } elseif (Test-Path $domainsFile) {
+                    $domainsRaw = Get-Content $domainsFile -Raw | ConvertFrom-Json
+                    $existing = @()
+                    if ($domainsRaw.PSObject.Properties[$Arg1]) { $existing = @($domainsRaw.$Arg1) }
+                    if ($existing -notcontains $Arg2) { $existing += $Arg2 }
+                    if ($domainsRaw.PSObject.Properties[$Arg1]) { $domainsRaw.$Arg1 = $existing }
+                    else { $domainsRaw | Add-Member -NotePropertyName $Arg1 -NotePropertyValue $existing -Force }
+                    $json = $domainsRaw | ConvertTo-Json -Depth 10
+                    [System.IO.File]::WriteAllText($domainsFile, $json)
                 }
                 Write-Host "Added $Arg2 to group [$Arg1]" -ForegroundColor Green
             }
@@ -247,13 +256,13 @@ switch ($Command) {
                 }
                 if (Test-ServiceRunning) {
                     Send-ControlCommand "/domains/remove?domain=$Arg1" | Out-Null
-                } else {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                    foreach ($prop in $cfg.domains.PSObject.Properties) {
+                } elseif (Test-Path $domainsFile) {
+                    $domainsRaw = Get-Content $domainsFile -Raw | ConvertFrom-Json
+                    foreach ($prop in $domainsRaw.PSObject.Properties) {
                         $prop.Value = @($prop.Value | Where-Object { $_ -ne $Arg1 })
                     }
-                    $json = $cfg | ConvertTo-Json -Depth 5
-                    [System.IO.File]::WriteAllText($configFile, $json)
+                    $json = $domainsRaw | ConvertTo-Json -Depth 10
+                    [System.IO.File]::WriteAllText($domainsFile, $json)
                 }
                 Write-Host "Removed $Arg1" -ForegroundColor Green
             }
@@ -276,19 +285,20 @@ switch ($Command) {
                 }
                 $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
                 switch ($Arg1) {
-                    "proxy_port" { $cfg.proxy_port = [int]$Arg2 }
-                    "control_port" { $cfg.control_port = [int]$Arg2 }
-                    "ssid_pattern" { $cfg.ssid_pattern = $Arg2 }
-                    "auto_switch" { $cfg.auto_switch = $Arg2 -eq "true" }
-                    "wifi_detection" { $cfg.wifi_detection = $Arg2 -eq "true" }
-                    "auto_start" { $cfg.auto_start = $Arg2 -eq "true" }
-                    "dashboard_enabled" { $cfg.dashboard_enabled = $Arg2 -eq "true" }
+                    "proxy.port" { $cfg.proxy.port = [int]$Arg2 }
+                    "control.port" { $cfg.control.port = [int]$Arg2 }
+                    "network.ssid_pattern" { $cfg.network.ssid_pattern = $Arg2 }
+                    "network.wifi_detection" { $cfg.network.wifi_detection = ($Arg2 -eq "true") }
+                    "network.auto_switch" { $cfg.network.auto_switch = ($Arg2 -eq "true") }
+                    "behavior.auto_start" { $cfg.behavior.auto_start = ($Arg2 -eq "true") }
+                    "control.dashboard_enabled" { $cfg.control.dashboard_enabled = ($Arg2 -eq "true") }
                     default {
                         Write-Host "Unknown key: $Arg1" -ForegroundColor Red
+                        Write-Host "Valid keys: proxy.port, control.port, network.ssid_pattern, network.wifi_detection, network.auto_switch, behavior.auto_start, control.dashboard_enabled" -ForegroundColor Yellow
                         exit 1
                     }
                 }
-                $json = $cfg | ConvertTo-Json -Depth 5
+                $json = $cfg | ConvertTo-Json -Depth 10
                 [System.IO.File]::WriteAllText($configFile, $json)
                 Write-Host "Set $Arg1 = $Arg2" -ForegroundColor Green
                 if (Test-ServiceRunning) {
@@ -297,9 +307,8 @@ switch ($Command) {
                 }
             }
             "reset" {
-                $defaultConfig = Join-Path (Split-Path -Parent $scriptDir) "config.default.json"
-                if (Test-Path $defaultConfig) {
-                    Copy-Item $defaultConfig $configFile -Force
+                if (Test-Path $defaultConfigFile) {
+                    Copy-Item $defaultConfigFile $configFile -Force
                     Write-Host "Configuration reset to defaults." -ForegroundColor Green
                     if (Test-ServiceRunning) { Send-ControlCommand "/reload" | Out-Null }
                 } else {
@@ -314,16 +323,22 @@ switch ($Command) {
     }
 
     "install" {
-        $installPath = if ($config -and $config.install_path) { $config.install_path -replace '%USERPROFILE%', $env:USERPROFILE } else { "$env:USERPROFILE\.proxy" }
+        $installPath = if ($config -and $config.behavior -and $config.behavior.install_path) { $config.behavior.install_path -replace '%USERPROFILE%', $env:USERPROFILE } else { "$env:USERPROFILE\.proxy" }
         if (-not (Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath -Force | Out-Null }
 
         Copy-Item "$scriptDir\proxy-service.ps1" "$installPath\" -Force
         Copy-Item "$scriptDir\proxy-cli.ps1" "$installPath\" -Force
         Copy-Item "$scriptDir\proxy-tray.ps1" "$installPath\" -Force -ErrorAction SilentlyContinue
         Copy-Item "$scriptDir\dashboard.html" "$installPath\" -Force -ErrorAction SilentlyContinue
+        Copy-Item "$scriptDir\config.default.json" "$installPath\" -Force
+        Copy-Item "$scriptDir\domains.json" "$installPath\" -Force -ErrorAction SilentlyContinue
+
+        $modulesInstall = Join-Path $installPath "modules"
+        if (-not (Test-Path $modulesInstall)) { New-Item -ItemType Directory -Path $modulesInstall -Force | Out-Null }
+        Copy-Item "$scriptDir\modules\*.ps1" "$modulesInstall\" -Force
+
         if (-not (Test-Path "$installPath\config.json")) {
-            $defaultCfg = Join-Path (Split-Path -Parent $scriptDir) "config.default.json"
-            if (Test-Path $defaultCfg) { Copy-Item $defaultCfg "$installPath\config.json" }
+            Copy-Item "$scriptDir\config.default.json" "$installPath\config.json"
         }
 
         $binDir = Join-Path (Split-Path -Parent $scriptDir) "bin"
@@ -377,7 +392,7 @@ switch ($Command) {
         Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 0
         Remove-ItemProperty -Path $regPath -Name ProxyServer -ErrorAction SilentlyContinue
 
-        $installPath = if ($config -and $config.install_path) { $config.install_path -replace '%USERPROFILE%', $env:USERPROFILE } else { "$env:USERPROFILE\.proxy" }
+        $installPath = if ($config -and $config.behavior -and $config.behavior.install_path) { $config.behavior.install_path -replace '%USERPROFILE%', $env:USERPROFILE } else { "$env:USERPROFILE\.proxy" }
         $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
         if ($userPath -like "*$installPath*") {
             $newPath = ($userPath -split ';' | Where-Object { $_ -ne $installPath }) -join ';'
@@ -415,7 +430,7 @@ Commands:
   domains remove <d>       Remove domain from all groups
 
   config show              Show current configuration
-  config set <key> <val>   Set a config value
+  config set <key> <val>   Set a config value (e.g. proxy.port, network.ssid_pattern)
   config reset             Reset to defaults
 
   install [-Mode cli|full] Install as startup service

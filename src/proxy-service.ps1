@@ -2,7 +2,7 @@
 .SYNOPSIS
     company-auto-proxy service daemon.
 .DESCRIPTION
-    Local proxy with domain-based routing, control API, dashboard, and WiFi SSID auto-detection.
+    Local proxy with domain-based routing, control API, and WiFi SSID auto-detection.
     Automatically sets system proxy and environment variables to capture all traffic.
 #>
 
@@ -12,15 +12,15 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$configFile = Join-Path $scriptDir "config.json"
-if (-not (Test-Path $configFile)) {
-    $defaultConfig = Join-Path (Split-Path -Parent $scriptDir) "config.default.json"
-    if (Test-Path $defaultConfig) { Copy-Item $defaultConfig $configFile }
-    else { Write-Error "No config.json found"; exit 1 }
-}
+$modulesDir = Join-Path $scriptDir "modules"
+. (Join-Path $modulesDir "Config.ps1")
+. (Join-Path $modulesDir "DomainMatcher.ps1")
+. (Join-Path $modulesDir "SystemProxy.ps1")
 
-$script:Config = Get-Content $configFile -Raw | ConvertFrom-Json
-if ($Dashboard) { $script:Config.dashboard_enabled = $true }
+$script:Config = Initialize-Config -ScriptDir $scriptDir
+if ($Dashboard) { $script:Config.control.dashboard_enabled = $true }
+
+$script:DomainSet = Initialize-DomainSet -ScriptDir $scriptDir
 
 $script:State = [hashtable]::Synchronized(@{
     Running         = $true
@@ -31,19 +31,14 @@ $script:State = [hashtable]::Synchronized(@{
     ActiveConns     = [long]0
     StartTime       = [DateTime]::UtcNow
     NetworkState    = "UNKNOWN"
-    DashboardEnabled = [bool]$script:Config.dashboard_enabled
-    WifiDetection   = [bool]$script:Config.wifi_detection
-    AutoStart       = [bool]$script:Config.auto_start
-    SsidPattern     = [string]$script:Config.ssid_pattern
+    DashboardEnabled = [bool]$script:Config.control.dashboard_enabled
+    WifiDetection   = [bool]$script:Config.network.wifi_detection
+    AutoStart       = [bool]$script:Config.behavior.auto_start
+    SsidPattern     = [string]$script:Config.network.ssid_pattern
 })
 
 $script:LogBuffer = [System.Collections.Concurrent.ConcurrentQueue[hashtable]]::new()
-$script:LogMax = if ($script:Config.log_max_entries -gt 0) { $script:Config.log_max_entries } else { 100 }
-
-$script:DomainSet = [hashtable]::Synchronized(@{})
-foreach ($group in $script:Config.domains.PSObject.Properties) {
-    foreach ($d in $group.Value) { $script:DomainSet[$d.ToLower()] = $true }
-}
+$script:LogMax = if ($script:Config.logging.max_entries -gt 0) { $script:Config.logging.max_entries } else { 100 }
 
 $mutex = New-Object System.Threading.Mutex($false, "Global\CompanyProxyAutoServiceMutex")
 if (-not $mutex.WaitOne(0)) {
@@ -52,48 +47,6 @@ if (-not $mutex.WaitOne(0)) {
 }
 
 Write-Host "company-auto-proxy service starting..." -ForegroundColor Cyan
-
-# --- System proxy management ---
-$regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-
-function Enable-SystemProxy {
-    param([int]$Port)
-    $proxyAddr = "127.0.0.1:$Port"
-    $proxyUrl = "http://$proxyAddr"
-    Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 1
-    Set-ItemProperty -Path $regPath -Name ProxyServer -Value $proxyAddr
-    [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $proxyUrl, "User")
-    [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $proxyUrl, "User")
-    $script:State.ProxyEnabled = $true
-}
-
-function Disable-SystemProxy {
-    Set-ItemProperty -Path $regPath -Name ProxyEnable -Value 0
-    Remove-ItemProperty -Path $regPath -Name ProxyServer -ErrorAction SilentlyContinue
-    [System.Environment]::SetEnvironmentVariable("HTTP_PROXY", $null, "User")
-    [System.Environment]::SetEnvironmentVariable("HTTPS_PROXY", $null, "User")
-    $script:State.ProxyEnabled = $false
-}
-
-function Set-AutoStart {
-    param([bool]$Enabled)
-    $taskName = "CompanyProxyAuto"
-    if ($Enabled) {
-        $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-        if (-not $existingTask) {
-            $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptDir\proxy-service.ps1`""
-            $trigger = New-ScheduledTaskTrigger -AtLogOn
-            $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)
-            Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
-        }
-    } else {
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    }
-    $script:State.AutoStart = $Enabled
-    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-    $cfg.auto_start = $Enabled
-    $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
-}
 
 # SSID check
 function Get-CurrentSSID {
@@ -112,15 +65,19 @@ if ($script:State.WifiDetection) {
     $script:State.NetworkState = "CORP"
 }
 
-# Enable system proxy on start
-Enable-SystemProxy -Port $script:Config.proxy_port
+Enable-SystemProxy -Port $script:Config.proxy.port
 
 # PID file
 Set-Content -Path (Join-Path $scriptDir "proxy.pid") -Value $PID -NoNewline
 
+# Start config file watcher for hot-reload
+$configPath = Join-Path $scriptDir "config.json"
+$domainsPath = Join-Path $scriptDir "domains.json"
+$watcher = Start-ConfigWatcher -ConfigPath $configPath -DomainsPath $domainsPath -State $script:State -DomainSet $script:DomainSet
+
 # --- Control API ---
 $controlScriptBlock = {
-    param($controlPort, $proxyPort, $state, $logBuffer, $logMax, $configFile, $domainSet, $dashFile, $scriptDir)
+    param($controlPort, $proxyPort, $state, $logBuffer, $logMax, $configFile, $domainSet, $dashFile, $scriptDir, $domainsFile, $defaultConfigPath)
 
     $dashHtml = if (Test-Path $dashFile) { [System.IO.File]::ReadAllText($dashFile) } else { "" }
     $listener = New-Object System.Net.HttpListener
@@ -190,80 +147,38 @@ $controlScriptBlock = {
                     proxy_enabled = $state.ProxyEnabled
                 } | ConvertTo-Json -Compress
             }
-            "/settings/auto_start" {
-                $val = $req.QueryString["value"]
-                $enabled = $val -eq "true"
-                $taskName = "CompanyProxyAuto"
-                if ($enabled) {
-                    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-                    if (-not $existingTask) {
-                        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$scriptDir\proxy-service.ps1`""
-                        $trigger = New-ScheduledTaskTrigger -AtLogOn
-                        $settings_ = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero)
-                        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings_ -Force | Out-Null
-                    }
-                } else {
-                    Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-                }
-                $state.AutoStart = $enabled
-                try {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                    $cfg.auto_start = $enabled
-                    $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
-                } catch {}
-                $jsonOut = '{"ok":true}'
-            }
-            "/settings/wifi_detection" {
-                $val = $req.QueryString["value"]
-                $enabled = $val -eq "true"
-                $state.WifiDetection = $enabled
-                if (-not $enabled) { $state.NetworkState = "CORP" }
-                try {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                    $cfg.wifi_detection = $enabled
-                    $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
-                } catch {}
-                $jsonOut = '{"ok":true}'
-            }
-            "/settings/ssid_pattern" {
-                $val = $req.QueryString["value"]
-                if ($val) {
-                    $state.SsidPattern = $val
-                    try {
-                        $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                        $cfg.ssid_pattern = $val
-                        $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
-                    } catch {}
-                }
-                $jsonOut = '{"ok":true}'
-            }
             "/reload" {
                 try {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
+                    $defaults = Get-Content $defaultConfigPath -Raw | ConvertFrom-Json
+                    $userCfg = if (Test-Path $configFile) { Get-Content $configFile -Raw | ConvertFrom-Json } else { $defaults }
                     $domainSet.Clear()
-                    foreach ($grp in $cfg.domains.PSObject.Properties) {
+                    $domainsRaw = Get-Content $domainsFile -Raw | ConvertFrom-Json
+                    foreach ($grp in $domainsRaw.PSObject.Properties) {
                         foreach ($d in $grp.Value) { $domainSet[$d.ToLower()] = $true }
                     }
-                    $state.WifiDetection = [bool]$cfg.wifi_detection
-                    $state.AutoStart = [bool]$cfg.auto_start
-                    $state.SsidPattern = [string]$cfg.ssid_pattern
+                    $state.WifiDetection = [bool]$userCfg.network.wifi_detection
+                    $state.AutoStart = [bool]$userCfg.behavior.auto_start
+                    $state.SsidPattern = [string]$userCfg.network.ssid_pattern
                 } catch {}
                 $jsonOut = '{"ok":true}'
             }
             "/dashboard/on" { $state.DashboardEnabled = $true; $jsonOut = '{"ok":true}' }
             "/dashboard/off" { $state.DashboardEnabled = $false; $jsonOut = '{"ok":true}' }
             "/domains" {
-                $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                $jsonOut = $cfg.domains | ConvertTo-Json -Depth 3 -Compress
+                $domainsRaw = Get-Content $domainsFile -Raw
+                $jsonOut = $domainsRaw
             }
             "/domains/add" {
                 $group = $req.QueryString["group"]; $domain = $req.QueryString["domain"]
                 if ($group -and $domain) {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                    $list = [System.Collections.ArrayList]@($cfg.domains.$group)
-                    $list.Add($domain) | Out-Null
-                    $cfg.domains | Add-Member -NotePropertyName $group -NotePropertyValue @($list) -Force
-                    $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
+                    $domainsRaw = Get-Content $domainsFile -Raw | ConvertFrom-Json
+                    $existing = @()
+                    if ($domainsRaw.PSObject.Properties[$group]) { $existing = @($domainsRaw.$group) }
+                    if ($existing -notcontains $domain) { $existing += $domain }
+                    if ($domainsRaw.PSObject.Properties[$group]) { $domainsRaw.$group = $existing }
+                    else { $domainsRaw | Add-Member -NotePropertyName $group -NotePropertyValue $existing -Force }
+                    $json = $domainsRaw | ConvertTo-Json -Depth 10
+                    [System.IO.File]::WriteAllText($domainsFile, $json)
                     $domainSet[$domain.ToLower()] = $true
                 }
                 $jsonOut = '{"ok":true}'
@@ -271,11 +186,12 @@ $controlScriptBlock = {
             "/domains/remove" {
                 $domain = $req.QueryString["domain"]
                 if ($domain) {
-                    $cfg = Get-Content $configFile -Raw | ConvertFrom-Json
-                    foreach ($prop in $cfg.domains.PSObject.Properties) {
+                    $domainsRaw = Get-Content $domainsFile -Raw | ConvertFrom-Json
+                    foreach ($prop in $domainsRaw.PSObject.Properties) {
                         $prop.Value = @($prop.Value | Where-Object { $_ -ne $domain })
                     }
-                    $cfg | ConvertTo-Json -Depth 5 | Set-Content $configFile -Encoding UTF8
+                    $json = $domainsRaw | ConvertTo-Json -Depth 10
+                    [System.IO.File]::WriteAllText($domainsFile, $json)
                     $domainSet.Remove($domain.ToLower())
                 }
                 $jsonOut = '{"ok":true}'
@@ -449,7 +365,8 @@ $proxyHandler = {
 }
 
 # --- Start RunspacePool ---
-$pool = [RunspaceFactory]::CreateRunspacePool(1, 20)
+$maxConns = if ($script:Config.proxy.max_connections -gt 0) { $script:Config.proxy.max_connections } else { 20 }
+$pool = [RunspaceFactory]::CreateRunspacePool(1, $maxConns)
 $pool.Open()
 $jobs = [System.Collections.ArrayList]::new()
 
@@ -457,35 +374,39 @@ $jobs = [System.Collections.ArrayList]::new()
 $controlPS = [PowerShell]::Create()
 $controlPS.RunspacePool = $pool
 $dashFile = Join-Path $scriptDir "dashboard.html"
+$defaultConfigPath = Join-Path $scriptDir "config.default.json"
 $controlPS.AddScript($controlScriptBlock).
-    AddArgument($script:Config.control_port).
-    AddArgument($script:Config.proxy_port).
+    AddArgument($script:Config.control.port).
+    AddArgument($script:Config.proxy.port).
     AddArgument($script:State).
     AddArgument($script:LogBuffer).
     AddArgument($script:LogMax).
-    AddArgument($configFile).
+    AddArgument($configPath).
     AddArgument($script:DomainSet).
     AddArgument($dashFile).
-    AddArgument($scriptDir) | Out-Null
+    AddArgument($scriptDir).
+    AddArgument($domainsPath).
+    AddArgument($defaultConfigPath) | Out-Null
 $controlHandle = $controlPS.BeginInvoke()
 
 # Start proxy TcpListener
-$proxyPort = $script:Config.proxy_port
+$proxyPort = $script:Config.proxy.port
 $tcpListener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $proxyPort)
 $tcpListener.Start()
 
-$upstreamProxy = if ($script:Config.upstream_proxies.Count -gt 0) { $script:Config.upstream_proxies[0] } else { "" }
+$upstreamProxy = if (@($script:Config.proxy.upstream_proxies).Count -gt 0) { $script:Config.proxy.upstream_proxies[0] } else { "" }
 
 Write-Host "  Proxy listening on 127.0.0.1:$proxyPort" -ForegroundColor Green
-Write-Host "  Control API on http://127.0.0.1:$($script:Config.control_port)/" -ForegroundColor Green
+Write-Host "  Control API on http://127.0.0.1:$($script:Config.control.port)/" -ForegroundColor Green
 Write-Host "  System proxy enabled (registry + env vars)" -ForegroundColor Green
 if ($script:State.DashboardEnabled) {
-    Write-Host "  Dashboard on http://127.0.0.1:$($script:Config.control_port)/dashboard" -ForegroundColor Green
+    Write-Host "  Dashboard on http://127.0.0.1:$($script:Config.control.port)/dashboard" -ForegroundColor Green
 }
 Write-Host "  Network state: $($script:State.NetworkState)" -ForegroundColor Yellow
 Write-Host ""
 
 $lastSsidCheck = [DateTime]::Now
+$detectionInterval = if ($script:Config.network.detection_interval_sec -gt 0) { $script:Config.network.detection_interval_sec } else { 30 }
 
 # --- Main loop ---
 while ($script:State.Running) {
@@ -504,8 +425,8 @@ while ($script:State.Running) {
         $jobs.Add(@{ PS = $ps; Handle = $handle }) | Out-Null
     }
 
-    # SSID check every 30s
-    if ($script:State.WifiDetection -and ([DateTime]::Now - $lastSsidCheck).TotalSeconds -ge 30) {
+    # SSID check at configured interval
+    if ($script:State.WifiDetection -and ([DateTime]::Now - $lastSsidCheck).TotalSeconds -ge $detectionInterval) {
         $ssid = Get-CurrentSSID
         $script:State.NetworkState = if ($ssid -match $script:State.SsidPattern) { "CORP" } else { "OTHER" }
         $lastSsidCheck = [DateTime]::Now
@@ -527,9 +448,10 @@ while ($script:State.Running) {
 Write-Host "`nShutting down..." -ForegroundColor Yellow
 $tcpListener.Stop()
 
-# Disable system proxy on shutdown
 Disable-SystemProxy
 Write-Host "  System proxy cleared" -ForegroundColor Green
+
+Stop-ConfigWatcher
 
 try { $controlPS.EndInvoke($controlHandle) } catch {}
 $controlPS.Dispose()
