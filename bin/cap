@@ -1,0 +1,7 @@
+#!/bin/bash
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/proxy-cli.ps1" ]; then
+    powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$SCRIPT_DIR/proxy-cli.ps1" "$@"
+else
+    powershell.exe -ExecutionPolicy Bypass -NoProfile -File "$SCRIPT_DIR/../src/proxy-cli.ps1" "$@"
+fi
