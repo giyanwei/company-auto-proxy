@@ -178,12 +178,12 @@ switch ($Command) {
             exit 1
         }
         $uptime = Format-Uptime $status.uptime
-        $mode = if ($status.network_state) { $status.network_state.ToUpper() } else { "UNKNOWN" }
+        $netMode = if ($status.network_state) { $status.network_state.ToUpper() } else { "UNKNOWN" }
         if ($Short) {
-            Write-Host "running $mode $($uptime -replace ' ', '')"
+            Write-Host "running $netMode $($uptime -replace ' ', '')"
             exit 0
         }
-        $network = $mode
+        $network = $netMode
         if ($status.ssid_pattern) { $network += " (SSID: $($status.ssid_pattern))" }
         $totalReq = if ($status.total_requests) { $status.total_requests } else { 0 }
         $proxiedReq = if ($status.proxied_requests) { $status.proxied_requests } else { 0 }
@@ -194,7 +194,7 @@ switch ($Command) {
         Write-Host " Service: " -NoNewline -ForegroundColor Gray
         Write-Host "running" -NoNewline -ForegroundColor Green
         Write-Host "    Mode: " -NoNewline -ForegroundColor Gray
-        Write-Host "$mode" -NoNewline -ForegroundColor Cyan
+        Write-Host "$netMode" -NoNewline -ForegroundColor Cyan
         Write-Host "    Uptime: " -NoNewline -ForegroundColor Gray
         Write-Host "$uptime" -ForegroundColor Cyan
         Write-Host "  Listen:    " -NoNewline -ForegroundColor Gray
