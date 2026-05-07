@@ -1,0 +1,78 @@
+{
+  "_description": "Configuration schema documentation for Company Auto Proxy. Not used for runtime validation (PS 5.1 lacks Test-Json). Serves as reference for field types and constraints.",
+  "proxy": {
+    "port": {
+      "type": "integer",
+      "constraints": "1024-65535",
+      "description": "Local proxy listener port"
+    },
+    "upstream_proxies": {
+      "type": "array of string",
+      "constraints": "At least one URL matching http(s)://host:port",
+      "description": "Corporate proxy servers to forward matching traffic through"
+    },
+    "max_connections": {
+      "type": "integer",
+      "constraints": "1-100",
+      "description": "Maximum concurrent proxy connections (RunspacePool size)"
+    }
+  },
+  "network": {
+    "ssid_pattern": {
+      "type": "string",
+      "constraints": "Valid regex pattern",
+      "description": "WiFi SSID pattern to detect corporate network"
+    },
+    "wifi_detection": {
+      "type": "boolean",
+      "constraints": "true/false",
+      "description": "Enable WiFi-based network detection"
+    },
+    "auto_switch": {
+      "type": "boolean",
+      "constraints": "true/false",
+      "description": "Automatically switch proxy mode based on network"
+    },
+    "detection_interval_sec": {
+      "type": "integer",
+      "constraints": "> 0 (fallback: 30)",
+      "description": "Seconds between network detection checks"
+    }
+  },
+  "control": {
+    "port": {
+      "type": "integer",
+      "constraints": "1024-65535",
+      "description": "Control API listener port"
+    },
+    "dashboard_enabled": {
+      "type": "boolean",
+      "constraints": "true/false",
+      "description": "Enable web dashboard on control port"
+    }
+  },
+  "logging": {
+    "level": {
+      "type": "string",
+      "constraints": "One of: debug, info, warn, error (fallback: info)",
+      "description": "Minimum log level"
+    },
+    "max_entries": {
+      "type": "integer",
+      "constraints": "> 0 (fallback: 100)",
+      "description": "Maximum log entries retained in memory buffer"
+    }
+  },
+  "behavior": {
+    "auto_start": {
+      "type": "boolean",
+      "constraints": "true/false",
+      "description": "Register scheduled task for auto-start at logon"
+    },
+    "install_path": {
+      "type": "string",
+      "constraints": "Valid directory path (supports %USERPROFILE%)",
+      "description": "Installation directory for proxy files"
+    }
+  }
+}

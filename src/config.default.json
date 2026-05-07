@@ -1,0 +1,25 @@
+{
+  "proxy": {
+    "port": 8081,
+    "upstream_proxies": ["http://proxy.example.com:8080"],
+    "max_connections": 20
+  },
+  "network": {
+    "ssid_pattern": "CORP",
+    "wifi_detection": true,
+    "auto_switch": true,
+    "detection_interval_sec": 30
+  },
+  "control": {
+    "port": 8082,
+    "dashboard_enabled": false
+  },
+  "logging": {
+    "level": "info",
+    "max_entries": 100
+  },
+  "behavior": {
+    "auto_start": false,
+    "install_path": "%USERPROFILE%\\.proxy"
+  }
+}
