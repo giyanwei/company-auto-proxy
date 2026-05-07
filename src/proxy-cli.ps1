@@ -66,7 +66,7 @@ function Send-ControlCommand {
 function Start-ProxyService {
     $serviceScript = Join-Path $scriptDir "proxy-service.ps1"
     Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$serviceScript`"" -WindowStyle Hidden
-    $timeout = 50
+    $timeout = 100
     for ($i = 0; $i -lt $timeout; $i++) {
         Start-Sleep -Milliseconds 100
         if (Test-ServiceRunning) { return $true }
